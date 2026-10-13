@@ -1,0 +1,4 @@
+*.o
+myvectorcalc
+*.csv
+!vectors.csv
