@@ -37,25 +37,58 @@ static void print_vect(vect v)
     printf("%s = %g %g %g\n", v.name, v.x, v.y, v.z);
 }
 
-/* helper methods for commands */
-
-// Saves a vector to the store and prints it
-static void save_and_print(vect v, const char *name)
+static int set_name(vect *v, const char *name)
 {
-    strncpy(v.name, name, VECT_NAME_LENGTH - 1);
-    v.name[VECT_NAME_LENGTH - 1] = '\0'; // Ensure null-termination
+    double tmp;
+    if (is_number(name, &tmp)) 
+    {
+        printf("Error: Name cannot be a number: %s\n", name);
+        return 0; // Name cannot be a number
+    }
+    if (strlen(name) >= sizeof(v->name)) 
+    {
+        printf("Error: Name too long: %s\n", name);
+        return 0; // Name too long
+    }
+    strcpy(v->name, name);
+    return 1; // Name set successfully
+}
+
+static int is_operator(const char *str)
+{
+    return (strcmp(str, "+") == 0 || strcmp(str, "-") == 0 || strcmp(str, "*") == 0);
+}
+
+static void store_and_print(vect v, const char *name)
+{
+    if (!set_name(&v, name)) 
+    {
+        return; // Invalid name
+    }
+    int saved = (store_add(v) == 1);
     print_vect(v);
-    if (store_add(v) != 1) {
+    if (!saved) 
+    {
         printf("Error: Vector storage is full. Cannot save vector '%s'.\n", name);
     }
 }
 
+/* helper methods for commands */
+
 // Handles the "list" command by printing all stored vectors.
 static void handle_list(void)
 {
-    vect v;
-    for (int i = 0; i < MAX_VECTS; i++) {
-        if (store_get(i, &v) == 1) {
+    int n = store_count();
+    if (n == 0) 
+    {
+        printf("No vectors stored.\n");
+        return;
+    }
+    for (int i = 0; i < n; i++) 
+    {
+        vect v;
+        if (store_get(i, &v) == 1) 
+        {
             print_vect(v);
         }
     }
@@ -93,7 +126,7 @@ static void handle_assign(const char *name, const char *xs, const char *ys, cons
         printf("Invalid z value: %s\n", zs);
         return;
     }
-    save_and_print(v, name);
+    store_and_print(v, name);
 }
 
 /*
@@ -145,6 +178,68 @@ static int do_operation(const char *lhs, const char *op, const char *rhs, vect *
     return 1;
 }
 
+static void handle_load(const char *filename)
+{
+    int bad_lines = 0;
+    int first_bad = -1;
+    int loaded = store_load(filename, &bad_lines, &first_bad);
+    if (loaded == -1)
+    {
+        printf("Error: Could not open file '%s'.\n", filename);
+    } 
+    else if (loaded == -2) 
+    {
+        printf("Error: Out of memory while loading vectors from '%s'.\n", filename);
+    } 
+    else 
+    {
+        printf("Loaded %d vectors from '%s'.\n", loaded, filename);
+        if (bad_lines > 0) 
+        {
+            printf("Warning: %d bad lines encountered. First bad line: %d\n", bad_lines, first_bad);
+        }
+    }
+}
+
+static void handle_save(const char *filename)
+{
+    int saved = store_save(filename);
+    if (saved < 0) 
+    {
+        printf("Error: Could not open file '%s' for writing.\n", filename);
+    } 
+    else 
+    {
+        printf("Saved %d vectors to '%s'.\n", saved, filename);
+    }
+}
+
+static void handle_fill(const char *count_str)
+{
+    double d;
+    if (!is_number(count_str, &d) || d < 1 || d != (int)d) 
+    {
+        printf("Error: Invalid count for fill: %s\n", count_str);
+        return;
+    }
+
+    int n = (int)d;
+    for (int i = 1; i <= n; i++) 
+    {
+        vect v = {0};
+        snprintf(v.name, sizeof(v.name), "f%d", i);
+        v.x = i;
+        v.y = i * 2;
+        v.z = i * 3;
+        if (store_add(v) != 1) 
+        {
+            printf("Error: Out of memory while filling vectors.\n");
+            return;
+        }
+    }
+    printf("Filled %d vectors.\n", n);
+}
+
 static int handle_line(const char *t1, const char *t2, const char *t3, const char *t4, const char *t5, int n)
 {
     if (n == 0) 
@@ -160,24 +255,49 @@ static int handle_line(const char *t1, const char *t2, const char *t3, const cha
         else if(strcmp(t1, "clear") == 0)
         {
             store_clear();
+            return 0;
         }
         else if(strcmp(t1, "list") == 0)
         {
             handle_list();
+            return 0;
         }
-        else {
-            handle_display(t1);
+        else if (strcmp(t1, "load") == 0 || strcmp(t1, "save") == 0 || strcmp(t1, "fill") == 0)
+        {
+            printf("Usage: %s <%s>\n", t1, strcmp(t1, "fill") == 0 ? "count" : "filename");
+            return 0;
         }
+        handle_display(t1);
         return 0;
+        }
+
+    if (n == 2)
+    {
+        if (strcmp(t1, "load") == 0) 
+        {
+            handle_load(t2);
+            return 0;
+        }
+        if (strcmp(t1, "save") == 0) 
+        {
+            handle_save(t2);
+            return 0;
+        }
+        if (strcmp(t1, "fill") == 0) 
+        {
+            handle_fill(t2);
+            return 0;
+        }
     }
-        if (strcmp(t2, "=") == 0) 
+
+    if (n >= 4 && strcmp(t2, "=") == 0)
+    {
+        if (n == 5 && is_operator(t4))
         {
-        vect result;
-        if (n == 5 && (strcmp(t4, "+") == 0 || strcmp(t4, "-") == 0 || strcmp(t4, "*") == 0)) 
-        {
-            if (do_operation(t3, t4, t5, &result) == 1) // c = a + b
+            vect result;
+            if (do_operation(t3, t4, t5, &result)) // c = a + b
             {   
-                save_and_print(result, t1);
+                store_and_print(result, t1);
             }
         } 
         else if (n >= 4) 
@@ -196,7 +316,7 @@ static int handle_line(const char *t1, const char *t2, const char *t3, const cha
         vect result;
         if (do_operation(t1, t2, t3, &result) == 1) // a + b -> ans
         {
-            save_and_print(result, "ans");
+            store_and_print(result, "ans");
         }
         return 0;
     }

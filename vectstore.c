@@ -8,6 +8,8 @@
  */
 
 #include <string.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include "vectstore.h"
 
 #define START_CAPACITY 4
@@ -66,7 +68,7 @@ static int parse_double(char *field, double *output)
     return endptr != field && *endptr == '\0'; // Return 1 if valid double, 0 otherwise
 }
 
-static int parse_csv_line(const char *line, vect *v)
+static int parse_csv_line(char *line, vect *v)
 {
     char *fields[4];
     int n = 0;
@@ -102,7 +104,7 @@ static int parse_csv_line(const char *line, vect *v)
         return 0; // Name cannot be a number
     }
     vect temp = {0};
-    strncpy(temp.name, name);
+    strcpy(temp.name, name);
     if (!parse_double(fields[1], &temp.x) || !parse_double(fields[2], &temp.y) || !parse_double(fields[3], &temp.z)) 
     {
         return 0; // Invalid number
@@ -193,7 +195,7 @@ int store_load(const char *filename, int *bad_lines, int *first_bad)
         line[strcspn(line, "\r\n")] = 0; // Remove newline characters
 
         char *start = line;
-        if (line_number == 1 && strncmp(start, "\xEF\xBF\xBB", 3) == 0) 
+        if (line_number == 1 && strncmp(start, "\xEF\xBB\xBF", 3) == 0) 
         {
             start += 3; // Skip BOM
         }
@@ -221,7 +223,7 @@ int store_load(const char *filename, int *bad_lines, int *first_bad)
     }
 
     fclose(file);
-    return 1; // Success
+    return loaded; // Success
 }
 
 int store_save(const char *filename)
@@ -230,7 +232,10 @@ int store_save(const char *filename)
     if (file == NULL) {
         return -1; // Failed to open file
     }
-    
+    for (int i = 0; i < count; i++)
+    {
+       fprintf(file, "%s,%.15g,%.15g,%.15g\n", store[i].name, store[i].x, store[i].y, store[i].z);
+    }
     if (fclose(file) != 0) {
         return -1; // Failed to close file
     }
